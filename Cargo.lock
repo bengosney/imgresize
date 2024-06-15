@@ -236,8 +236,10 @@ version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "02abb58c39fa9b20678cedabab49e6c4f6ecb7480d7cb5711496b9289184a875"
 dependencies = [
+ "bytemuck",
  "cfg-if",
  "document-features",
+ "image",
  "num-traits",
  "thiserror",
 ]
