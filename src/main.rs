@@ -4,6 +4,7 @@ use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
 
+use imgsize::ThreadPool;
 use std::path::PathBuf;
 
 use image::codecs::jpeg::JpegEncoder;
@@ -33,7 +34,7 @@ fn resize_image<P: Into<PathBuf>>(img_path: P) {
 
     fs::create_dir_all(path.to_str().unwrap()).unwrap();
 
-    path.push(filename);
+    path.push(filename.clone());
 
     let src_width = src_image.width();
     let src_height = src_image.height();
@@ -69,10 +70,12 @@ fn resize_image<P: Into<PathBuf>>(img_path: P) {
 
     let mut file = File::create(path).unwrap();
     file.write_all(&result_buf.into_inner().unwrap()).unwrap();
+    println!("Image {} saved", filename);
 }
 
 fn main() {
     let app = app::App::default();
+    let pool = ThreadPool::new(4);
 
     let mut ui = ui::UserInterface::make_window();
 
@@ -83,7 +86,9 @@ fn main() {
             for file in glob(&glob_path).expect("Failed to read glob pattern") {
                 let path = file.unwrap();
                 println!("{}", path.to_str().unwrap());
-                resize_image(path);
+                pool.execute(|| {
+                    resize_image(path);
+                });
             }
         }
     });
@@ -93,8 +98,6 @@ fn main() {
         dialog.show();
         ui.selected_dir
             .set_label(dialog.filename().to_str().unwrap());
-
-        ui.progress.set_label("bob");
     });
 
     app.run().unwrap();
