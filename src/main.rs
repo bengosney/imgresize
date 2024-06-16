@@ -3,6 +3,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
+use std::{cell::RefCell, rc::Rc};
 
 use imgsize::ThreadPool;
 use std::path::PathBuf;
@@ -78,26 +79,34 @@ fn main() {
     let pool = ThreadPool::new(4);
 
     let mut ui = ui::UserInterface::make_window();
+    let selected_dir = Rc::new(RefCell::new(None));
 
     ui.resize_btn.set_callback({
-        let ui = ui.clone();
+        let selected_dir = selected_dir.clone();
         move |_| {
-            let glob_path = format!("{}/*.jpg", ui.selected_dir.label());
-            for file in glob(&glob_path).expect("Failed to read glob pattern") {
-                let path = file.unwrap();
-                println!("{}", path.to_str().unwrap());
-                pool.execute(|| {
-                    resize_image(path);
-                });
+            if let Some(selected_dir) = &*selected_dir.borrow() {
+                let glob_path = format!("{}/*.jpg", selected_dir);
+                for file in glob(&glob_path).expect("Failed to read glob pattern") {
+                    let path = file.unwrap();
+                    println!("{}", path.to_str().unwrap());
+                    pool.execute(|| {
+                        resize_image(path);
+                    });
+                }
             }
         }
     });
 
-    ui.select_dir_btn.set_callback(move |_| {
-        let mut dialog = dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseDir);
-        dialog.show();
-        ui.selected_dir
-            .set_label(dialog.filename().to_str().unwrap());
+    ui.select_dir_btn.set_callback({
+        let selected_dir = selected_dir.clone();
+        move |_| {
+            let mut dialog =
+                dialog::NativeFileChooser::new(dialog::NativeFileChooserType::BrowseDir);
+            dialog.show();
+            *selected_dir.borrow_mut() = Some(dialog.filename().to_str().unwrap().to_string());
+            ui.selected_dir
+                .set_label(selected_dir.borrow().as_ref().unwrap());
+        }
     });
 
     app.run().unwrap();
