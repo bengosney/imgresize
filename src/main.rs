@@ -74,23 +74,57 @@ fn resize_image<P: Into<PathBuf>>(img_path: P) {
     println!("Image {} saved", filename);
 }
 
+#[derive(Debug, Clone)]
+struct Model {
+    count: usize,
+    max: usize,
+}
+impl Model {
+    fn init() -> Self {
+        Self { count: 0, max: 0 }
+    }
+    pub fn inc(&mut self) -> usize {
+        self.count += 1;
+        self.max = std::cmp::max(self.max, self.count);
+        self.max - self.count
+    }
+    pub fn dec(&mut self) -> usize {
+        self.count -= 1;
+        self.max - self.count
+    }
+}
+
 fn main() {
+    app::GlobalState::<Model>::new(Model::init());
     let app = app::App::default();
-    let pool = ThreadPool::new(4);
+    let pool = ThreadPool::new(2);
 
     let mut ui = ui::UserInterface::make_window();
     let selected_dir = Rc::new(RefCell::new(None));
 
     ui.resize_btn.set_callback({
         let selected_dir = selected_dir.clone();
+        let mut ui = ui.clone();
         move |_| {
             if let Some(selected_dir) = &*selected_dir.borrow() {
                 let glob_path = format!("{}/*.jpg", selected_dir);
+                let state = app::GlobalState::<Model>::get();
                 for file in glob(&glob_path).expect("Failed to read glob pattern") {
                     let path = file.unwrap();
+                    let count = state.with(|model| model.inc());
+                    ui.progress
+                        .set_maximum(state.with(|model| model.max) as f64);
+                    ui.progress.set_value(count as f64);
+
                     println!("{}", path.to_str().unwrap());
-                    pool.execute(|| {
-                        resize_image(path);
+
+                    pool.execute({
+                        let mut ui = ui.clone();
+                        move || {
+                            resize_image(path);
+                            let count = app::GlobalState::<Model>::get().with(|model| model.dec());
+                            ui.progress.set_value(count as f64);
+                        }
                     });
                 }
             }
