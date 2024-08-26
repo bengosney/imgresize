@@ -1,3 +1,4 @@
+use std::thread::available_parallelism;
 use std::{
     sync::{mpsc, Arc, Mutex},
     thread,
@@ -57,6 +58,12 @@ impl Drop for ThreadPool {
                 thread.join().unwrap();
             }
         }
+    }
+}
+
+impl Default for ThreadPool {
+    fn default() -> Self {
+        ThreadPool::new(available_parallelism().unwrap().get())
     }
 }
 
