@@ -9,3 +9,11 @@ fl2rust-macro = "0.5.19"
 fltk = "1.4.31"
 glob = "0.3.1"
 image = "0.25.1"
+
+[profile.dev]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
+strip = true
+lto = true
