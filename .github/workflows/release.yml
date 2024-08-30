@@ -1,21 +1,75 @@
+name: Deploy
+
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+    - '[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
 
 jobs:
-  release:
-    name: release ${{ matrix.target }}
+  build-and-upload:
+    name: Build and upload
     runs-on: ubuntu-latest
+
     strategy:
-      fail-fast: false
       matrix:
-        target: [x86_64-pc-windows-gnu, x86_64-unknown-linux-musl]
+        include:
+        - build: linux
+          target: x86_64-unknown-linux-musl
+          archive: tar.gz
+
+        - build: windows
+          target: x86_64-pc-windows-gnu
+          archive: zip
+
     steps:
-    - uses: actions/checkout@master
-    - name: Compile and release
-      uses: rust-build/rust-build.action@v1.4.5
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    - name: Get the release version from the tag
+      shell: bash
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
       with:
-        RUSTTARGET: ${{ matrix.target }}
-        EXTRA_FILES: README.md LICENSE
+        targets: ${{ matrix.target }}
+
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        use-cross: true
+        command: build
+        args: --verbose --release --target ${{ matrix.target }}
+
+    - name: Build archive
+      shell: bash
+      run: |
+        # Replace with the name of your binary
+        binary_name="<BINARY_NAME>"
+
+        dirname="${binary_name}-${{ env.VERSION }}-${{ matrix.target }}"
+        mkdir "${dirname}"
+        mv LICENSE "${dirname}"
+        mv README.md "${dirname}"
+        if [ "${{ matrix.target }}" = "x86_64-pc-windows-gnu" ]; then
+          mv "target/${{ matrix.target }}/release/${binary_name}.exe" "${dirname}"
+        else
+          mv "target/${{ matrix.target }}/release/${binary_name}" "${dirname}"
+        fi
+
+        if [ "${{ matrix.target }}" = "x86_64-pc-windows-gnu" ]; then
+          zip -r "${dirname}.zip" "${dirname}"
+          echo "ASSET=${dirname}.zip" >> $GITHUB_ENV
+        else
+          tar -czf "${dirname}.tar.gz" "${dirname}"
+          echo "ASSET=${dirname}.tar.gz" >> $GITHUB_ENV
+        fi
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          ${{ env.ASSET }}
