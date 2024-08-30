@@ -623,15 +623,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cmake"
-version = "0.1.50"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a31c789563b815f77f4250caee12365734369f942439b7defd71e18a48197130"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "cocoa"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1118,25 +1109,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fl2rust"
-version = "0.5.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f6679204ae2e70ee854f3caea0085fd15bf413baf81aba85422ea3394b00595f"
-dependencies = [
- "fluid-parser",
-]
-
-[[package]]
-name = "fl2rust-macro"
-version = "0.5.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c9d2926dce1ad7d3dc947fe6151aaa07b917f2b75e83cb86bd5306f4e434878c"
-dependencies = [
- "fl2rust",
- "fluid-parser",
-]
-
-[[package]]
 name = "flate2"
 version = "1.0.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1145,35 +1117,6 @@ dependencies = [
  "crc32fast",
  "miniz_oxide",
 ]
-
-[[package]]
-name = "fltk"
-version = "1.4.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b13d59fa22e206bb96b1b5d34c90c3f8b681d6cb219be14189d51fd3d04601c7"
-dependencies = [
- "bitflags 2.5.0",
- "crossbeam-channel",
- "fltk-sys",
- "once_cell",
- "paste",
- "ttf-parser 0.21.1",
-]
-
-[[package]]
-name = "fltk-sys"
-version = "1.4.31"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e4ae4894cdb50601efb11933df327e5232736383e1a0c8d6279c330d1b80c90c"
-dependencies = [
- "cmake",
-]
-
-[[package]]
-name = "fluid-parser"
-version = "0.1.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f8c1235afc20d2380c8c3bd46ab0bd3f8cda366cc19104f0da9cfc25e8fdf728"
 
 [[package]]
 name = "flume"
@@ -1804,8 +1747,6 @@ version = "0.2.0"
 dependencies = [
  "crossbeam",
  "fast_image_resize",
- "fl2rust-macro",
- "fltk",
  "glob",
  "iced",
  "image",
@@ -3581,12 +3522,6 @@ name = "ttf-parser"
 version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "17f77d76d837a7830fe1d4f12b7b4ba4192c1888001c7164257e4bc6d21d96b4"
-
-[[package]]
-name = "ttf-parser"
-version = "0.21.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c591d83f69777866b9126b24c6dd9a18351f177e49d625920d19f989fd31cf8"
 
 [[package]]
 name = "ttf-parser"
