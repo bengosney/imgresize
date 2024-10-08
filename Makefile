@@ -21,9 +21,12 @@ help: ## Display this help
 $(BUILD_DIR)/%/release/$(BINARY_NAME): $(SOURCE_FILES) Cargo.toml Cargo.lock
 	cargo build --release --target $*
 
+$(BUILD_DIR)/%/release/$(BINARY_NAME).exe: $(SOURCE_FILES) Cargo.toml Cargo.lock
+	cargo build --release --target $*
+
 build-linux: $(BUILD_DIR)/$(LINUX_TARGET)/release/$(BINARY_NAME) ## Build the Linux binary
 
-build-windows: $(BUILD_DIR)/$(LINUX_TARGET)/release/$(BINARY_NAME) ## Build the Windows binary
+build-windows: $(BUILD_DIR)/$(WINDOWS_TARGET)/release/$(BINARY_NAME).exe ## Build the Windows binary
 
 build: build-linux build-windows ## Build all the binaries
 
