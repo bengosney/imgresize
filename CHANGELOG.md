@@ -1,3 +1,9 @@
+## 0.3.1 (2024-10-08)
+
+### Fix
+
+- **files**: glob both jpg and jpeg file extentions
+
 ## 0.3.0 (2024-08-30)
 
 ### Feat
