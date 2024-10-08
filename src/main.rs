@@ -121,7 +121,7 @@ impl Application for ImageResizer {
                     .store(0, std::sync::atomic::Ordering::SeqCst);
                 self.total = 0;
                 self.completed = 0;
-                let glob_path = format!("{}/*.jpg", self.path.clone().unwrap().to_str().unwrap());
+                let glob_path = format!("{}/*.jp*g", self.path.clone().unwrap().to_str().unwrap());
                 for file in glob(&glob_path).expect("Failed to read glob pattern") {
                     self.total += 1;
                     let finished = self.completed_tracker.clone();
