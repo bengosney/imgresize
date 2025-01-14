@@ -10,7 +10,7 @@ use imgsize::ThreadPool;
 use std::path::PathBuf;
 
 use image::codecs::jpeg::JpegEncoder;
-use image::io::Reader as ImageReader;
+use image::ImageReader;
 use image::{ExtendedColorType, ImageEncoder};
 
 use fast_image_resize::images::Image;
