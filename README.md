@@ -7,7 +7,7 @@ This is a simple and fast image resizing tool.
 ## Technical
 
 It's written in rust, uses [fast_image_resize](https://crates.io/crates/fast_image_resize) for resizing and [iced](https://crates.io/crates/iced) as GUI library.
-I've tested it using rustc/cargo 1.80.0 and run on Linux Mint and Windows 11.
+I've tested it using rustc/cargo 1.84.0 and run on Linux Mint and Windows 11.
 
 ### Build
 
