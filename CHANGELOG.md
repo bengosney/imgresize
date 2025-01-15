@@ -1,3 +1,9 @@
+## 0.4.0 (2025-01-15)
+
+### Feat
+
+- **CARGO**: update dependacies and mimimum rust version
+
 ## 0.3.1 (2024-10-08)
 
 ### Fix
