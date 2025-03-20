@@ -5,8 +5,10 @@ use std::io::BufWriter;
 use std::io::Write;
 use std::sync::atomic::AtomicI32;
 use std::sync::Arc;
+use iced::futures::stream::{self, StreamExt};
 
-use imgsize::ThreadPool;
+use rayon::prelude::*;
+
 use std::path::PathBuf;
 
 use image::codecs::jpeg::JpegEncoder;
@@ -26,7 +28,6 @@ struct ImageResizer {
     completed: i32,
     total: i32,
     path: Option<PathBuf>,
-    pool: ThreadPool,
     completed_tracker: Arc<AtomicI32>,
 }
 
@@ -35,6 +36,7 @@ pub enum Message {
     OpenFileDialog,
     ResizeImages,
     Tick,
+    ProgressIncrement,
 }
 
 fn resize_image(path: PathBuf) {
@@ -107,10 +109,6 @@ impl Application for ImageResizer {
         String::from("Image Resizer")
     }
 
-    fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(std::time::Duration::from_millis(500)).map(|_| Message::Tick)
-    }
-
     fn update(&mut self, message: Self::Message) -> Command<Message> {
         match message {
             Message::OpenFileDialog => {
@@ -122,23 +120,27 @@ impl Application for ImageResizer {
                 self.total = 0;
                 self.completed = 0;
                 let glob_path = format!("{}/*.jp*g", self.path.clone().unwrap().to_str().unwrap());
-                for file in glob(&glob_path).expect("Failed to read glob pattern") {
-                    self.total += 1;
-                    let finished = self.completed_tracker.clone();
-                    let path = file.unwrap();
-                    self.pool.execute({
-                        move || {
-                            println!("{:?}", path.display());
-                            resize_image(path);
-                            finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        }
-                    });
-                }
+
+                let files: Vec<_> = glob(&glob_path)
+                    .expect("Failed to read glob pattern")
+                    .filter_map(Result::ok)
+                    .collect();
+                self.total = files.len() as i32;
+                println!("Total files: {}", self.total);
+
+                // Perform resizing in a background thread
+                return Command::perform(
+                    resize_images_async(files, self.completed_tracker.clone()),
+                    |_| Message::Tick, // Trigger a Tick message to update progress
+                );
             }
             Message::Tick => {
-                self.completed = self
-                    .completed_tracker
-                    .load(std::sync::atomic::Ordering::SeqCst);
+                println!("Tick");
+                self.completed = self.total;
+            }
+            Message::ProgressIncrement => {
+                println!("Incrementing progress");
+                self.completed += 1;
             }
         };
         Command::none()
@@ -162,6 +164,28 @@ impl Application for ImageResizer {
         .into()
     }
 }
+
+async fn resize_images_async(files: Vec<PathBuf>, completed_tracker: Arc<AtomicI32>) {
+    println!("Resizing images: START");
+    files.into_par_iter().for_each(|file| {
+        let finished = completed_tracker.clone();
+        println!("{:?}", file.display());
+        resize_image(file);
+        finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        
+        let _ = Command::perform(async {}, |_| Message::ProgressIncrement);
+    });
+    println!("Resizing images: STOP");
+}
+
+// Command::batch(vec![
+//     Command::perform(async move {
+//         for _ in receiver {
+//             // Each time we receive a message, dispatch ProgressIncrement
+//             Message::ProgressIncrement
+//         }
+//     }, |msg| msg),
+// ])
 
 fn main() -> iced::Result {
     ImageResizer::run(Settings {
