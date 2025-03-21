@@ -6,12 +6,11 @@ rust-version = "1.81.0"
 
 [dependencies]
 crossbeam = "0.8.4"
-fast_image_resize = {version = "4.0.0", features = ["image"]}
-glob = "0.3.1"
-iced = {version = "0.12.1", features = ["smol"]}
-image = "0.25.1"
-native-dialog = "0.7.0"
-rayon = "1.10.0"
+fast_image_resize = {version = "5", features = ["image"]}
+glob = "0.3"
+iced = { version = "0.12", features = ["smol", "tokio"] }
+image = "0.25"
+native-dialog = "0.7"
 
 [profile.dev]
 opt-level = 0
