@@ -1,3 +1,16 @@
+## 0.5.0 (2025-03-22)
+
+### Feat
+
+- **ui**: enhance image resizer with processing state management and UI updates
+- **async**: swap to async and tokio to handle threading
+- **threadding**: use rayon rather than my custom threadding
+
+### Refactor
+
+- **image**: implement image resizing functionality and refactor related code
+- **main**: improve code readability by formatting and organizing imports
+
 ## 0.4.0 (2025-01-15)
 
 ### Feat
