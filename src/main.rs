@@ -14,7 +14,7 @@ use image::{ExtendedColorType, ImageEncoder};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, Resizer};
 
-use iced::widget::{button, column, progress_bar, text, scrollable};
+use iced::widget::{button, column, progress_bar, scrollable, text};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 
 use native_dialog::FileDialog;
@@ -49,7 +49,11 @@ pub enum Message {
 }
 
 fn resize_image(path: PathBuf) {
-    println!("Resizing image {:?} on thread {:?}", path, thread::current().id());
+    println!(
+        "Resizing image {:?} on thread {:?}",
+        path,
+        thread::current().id()
+    );
     // Read source image from file
     let mut path = path;
     let src_image = ImageReader::open(path.to_str().unwrap())
@@ -142,9 +146,12 @@ impl Application for ImageResizer {
                 println!("Resizing on thread {:?}", thread::current().id());
                 self.processing_state = ProcesingState::Processing;
 
-                let commands: Vec<_> = files.into_iter().map(|file| {
-                    Command::perform(resize_image_async(file), |_| Message::ProgressIncrement)
-                }).collect();
+                let commands: Vec<_> = files
+                    .into_iter()
+                    .map(|file| {
+                        Command::perform(resize_image_async(file), |_| Message::ProgressIncrement)
+                    })
+                    .collect();
 
                 Command::batch(commands)
             }
@@ -182,11 +189,12 @@ impl Application for ImageResizer {
             button("Select Folder")
         };
 
-        let resize_button = if self.path.is_some() && self.processing_state != ProcesingState::Processing {
-            button("Resize Images").on_press(Message::ResizeImages)
-        } else {
-            button("Resize Images")
-        };
+        let resize_button =
+            if self.path.is_some() && self.processing_state != ProcesingState::Processing {
+                button("Resize Images").on_press(Message::ResizeImages)
+            } else {
+                button("Resize Images")
+            };
 
         column![
             select_folder_button.width(Length::Fill),
@@ -200,10 +208,6 @@ impl Application for ImageResizer {
         .align_items(Alignment::Center)
         .into()
     }
-}
-
-impl ImageResizer {
-
 }
 
 fn truncate(s: &str, len: usize) -> String {
