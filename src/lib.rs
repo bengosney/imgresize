@@ -1,97 +1,72 @@
-use std::thread::available_parallelism;
-use std::{
-    sync::{mpsc, Arc, Mutex},
-    thread,
-};
+use std::fs;
+use std::fs::File;
+use std::io::BufWriter;
+use std::io::Write;
+use std::thread;
 
-pub struct ThreadPool {
-    workers: Vec<Worker>,
-    sender: Option<mpsc::Sender<Job>>,
-}
+use std::path::PathBuf;
 
-type Job = Box<dyn FnOnce() + Send + 'static>;
+use image::codecs::jpeg::JpegEncoder;
+use image::ImageReader;
+use image::{ExtendedColorType, ImageEncoder};
 
-impl ThreadPool {
-    /// Create a new ThreadPool.
-    ///
-    /// The size is the number of threads in the pool.
-    ///
-    /// # Panics
-    ///
-    /// The `new` function will panic if the size is zero.
-    pub fn new(size: usize) -> ThreadPool {
-        assert!(size > 0);
+use fast_image_resize::images::Image;
+use fast_image_resize::{IntoImageView, Resizer};
 
-        let (sender, receiver) = mpsc::channel();
-        let receiver = Arc::new(Mutex::new(receiver));
+pub fn resize_image(path: PathBuf) {
+    println!(
+        "Resizing image {:?} on thread {:?}",
+        path,
+        thread::current().id()
+    );
+    // Read source image from file
+    let mut path = path;
+    let src_image = ImageReader::open(path.to_str().unwrap())
+        .unwrap()
+        .decode()
+        .unwrap();
 
-        let mut workers = Vec::with_capacity(size);
+    let filename: String = path.file_name().unwrap().to_string_lossy().into_owned();
+    path.pop();
+    path.push("smol");
 
-        for id in 0..size {
-            workers.push(Worker::new(id, Arc::clone(&receiver)));
-        }
+    fs::create_dir_all(path.to_str().unwrap()).unwrap();
 
-        ThreadPool {
-            workers,
-            sender: Some(sender),
-        }
-    }
+    path.push(filename.clone());
 
-    pub fn execute<F>(&self, f: F)
-    where
-        F: FnOnce() + Send + 'static,
-    {
-        let job = Box::new(f);
+    let src_width = src_image.width();
+    let src_height = src_image.height();
 
-        self.sender.as_ref().unwrap().send(job).unwrap();
-    }
-}
+    let max_size = std::cmp::max(src_width, src_height);
+    let modifier: f32 = 2048.0 / max_size as f32;
 
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        drop(self.sender.take());
+    println!("Source image: {}x{}", src_width, src_height);
 
-        for worker in &mut self.workers {
-            println!("Shutting down worker {}", worker.id);
+    // Create container for data of destination image
+    let dst_width = (src_width as f32 * modifier).floor() as u32;
+    let dst_height = (src_height as f32 * modifier).floor() as u32;
 
-            if let Some(thread) = worker.thread.take() {
-                thread.join().unwrap();
-            }
-        }
-    }
-}
+    println!("Destination image: {}x{}", dst_width, dst_height);
 
-impl Default for ThreadPool {
-    fn default() -> Self {
-        ThreadPool::new(available_parallelism().unwrap().get())
-    }
-}
+    let mut dst_image = Image::new(dst_width, dst_height, src_image.pixel_type().unwrap());
 
-struct Worker {
-    id: usize,
-    thread: Option<thread::JoinHandle<()>>,
-}
+    // Create Resizer instance and resize source image
+    // into buffer of destination image
+    let mut resizer = Resizer::new();
+    resizer.resize(&src_image, &mut dst_image, None).unwrap();
 
-impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Job>>>) -> Worker {
-        let thread = thread::spawn(move || loop {
-            let message = receiver.lock().unwrap().recv();
+    // Write destination image to file
+    let mut result_buf = BufWriter::new(Vec::new());
+    JpegEncoder::new(&mut result_buf)
+        .write_image(
+            dst_image.buffer(),
+            dst_width,
+            dst_height,
+            ExtendedColorType::Rgb8,
+        )
+        .unwrap();
 
-            match message {
-                Ok(job) => {
-                    println!("Worker {id} got a job; executing.");
-                    job();
-                }
-                Err(_) => {
-                    println!("Worker {id} disconnected; shutting down.");
-                    break;
-                }
-            }
-        });
-
-        Worker {
-            id,
-            thread: Some(thread),
-        }
-    }
+    let mut file = File::create(path).unwrap();
+    file.write_all(&result_buf.into_inner().unwrap()).unwrap();
+    println!("Image {} saved", filename);
 }

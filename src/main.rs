@@ -1,93 +1,42 @@
 use glob::glob;
-use std::fs;
-use std::fs::File;
-use std::io::BufWriter;
-use std::io::Write;
-use std::sync::atomic::AtomicI32;
-use std::sync::Arc;
+use std::thread;
 
-use imgsize::ThreadPool;
 use std::path::PathBuf;
 
-use image::codecs::jpeg::JpegEncoder;
-use image::ImageReader;
-use image::{ExtendedColorType, ImageEncoder};
-
-use fast_image_resize::images::Image;
-use fast_image_resize::{IntoImageView, Resizer};
-
 use iced::widget::{button, column, progress_bar, text};
-use iced::{Alignment, Application, Command, Element, Length, Settings, Subscription};
+use iced::{Alignment, Application, Command, Element, Length, Settings};
 
 use native_dialog::FileDialog;
+
+use imgsize::resize_image;
+
+#[derive(PartialEq)]
+enum ProcesingState {
+    Idle,
+    Processing,
+    Completed,
+}
+
+impl Default for ProcesingState {
+    fn default() -> Self {
+        ProcesingState::Idle
+    }
+}
 
 #[derive(Default)]
 struct ImageResizer {
     completed: i32,
     total: i32,
     path: Option<PathBuf>,
-    pool: ThreadPool,
-    completed_tracker: Arc<AtomicI32>,
+    processing_state: ProcesingState,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum Message {
     OpenFileDialog,
     ResizeImages,
-    Tick,
-}
-
-fn resize_image(path: PathBuf) {
-    // Read source image from file
-    let mut path = path;
-    let src_image = ImageReader::open(path.to_str().unwrap())
-        .unwrap()
-        .decode()
-        .unwrap();
-
-    let filename: String = path.file_name().unwrap().to_string_lossy().into_owned();
-    path.pop();
-    path.push("smol");
-
-    fs::create_dir_all(path.to_str().unwrap()).unwrap();
-
-    path.push(filename.clone());
-
-    let src_width = src_image.width();
-    let src_height = src_image.height();
-
-    let max_size = std::cmp::max(src_width, src_height);
-    let modifier: f32 = 2048.0 / max_size as f32;
-
-    println!("Source image: {}x{}", src_width, src_height);
-
-    // Create container for data of destination image
-    let dst_width = (src_width as f32 * modifier).floor() as u32;
-    let dst_height = (src_height as f32 * modifier).floor() as u32;
-
-    println!("Destination image: {}x{}", dst_width, dst_height);
-
-    let mut dst_image = Image::new(dst_width, dst_height, src_image.pixel_type().unwrap());
-
-    // Create Resizer instance and resize source image
-    // into buffer of destination image
-    let mut resizer = Resizer::new();
-    resizer.resize(&src_image, &mut dst_image, None).unwrap();
-
-    // Write destination image to file
-    let mut result_buf = BufWriter::new(Vec::new());
-    JpegEncoder::new(&mut result_buf)
-        .write_image(
-            dst_image.buffer(),
-            dst_width,
-            dst_height,
-            ExtendedColorType::Rgb8,
-        )
-        .unwrap();
-
-    let mut file = File::create(path).unwrap();
-    file.write_all(&result_buf.into_inner().unwrap()).unwrap();
-    println!("Image {} saved", filename);
+    ProgressIncrement,
+    ProcesingComplete,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -107,52 +56,83 @@ impl Application for ImageResizer {
         String::from("Image Resizer")
     }
 
-    fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(std::time::Duration::from_millis(500)).map(|_| Message::Tick)
-    }
-
     fn update(&mut self, message: Self::Message) -> Command<Message> {
         match message {
             Message::OpenFileDialog => {
                 self.path = FileDialog::new().show_open_single_dir().unwrap();
+                self.processing_state = ProcesingState::Idle;
+                self.total = 0;
+                self.completed = 0;
+                Command::none()
             }
             Message::ResizeImages => {
-                self.completed_tracker
-                    .store(0, std::sync::atomic::Ordering::SeqCst);
                 self.total = 0;
                 self.completed = 0;
                 let glob_path = format!("{}/*.jp*g", self.path.clone().unwrap().to_str().unwrap());
-                for file in glob(&glob_path).expect("Failed to read glob pattern") {
-                    self.total += 1;
-                    let finished = self.completed_tracker.clone();
-                    let path = file.unwrap();
-                    self.pool.execute({
-                        move || {
-                            println!("{:?}", path.display());
-                            resize_image(path);
-                            finished.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                        }
-                    });
+
+                let files: Vec<_> = glob(&glob_path)
+                    .expect("Failed to read glob pattern")
+                    .filter_map(Result::ok)
+                    .collect();
+                self.total = files.len() as i32;
+                println!("Total files: {}", self.total);
+                println!("Resizing on thread {:?}", thread::current().id());
+                self.processing_state = ProcesingState::Processing;
+
+                let commands: Vec<_> = files
+                    .into_iter()
+                    .map(|file| {
+                        Command::perform(resize_image_async(file), |_| Message::ProgressIncrement)
+                    })
+                    .collect();
+
+                Command::batch(commands)
+            }
+            Message::ProgressIncrement => {
+                println!("Incrementing progress");
+                self.completed += 1;
+
+                if self.completed == self.total {
+                    Command::perform(async {}, |_| Message::ProcesingComplete)
+                } else {
+                    Command::none()
                 }
             }
-            Message::Tick => {
-                self.completed = self
-                    .completed_tracker
-                    .load(std::sync::atomic::Ordering::SeqCst);
+            Message::ProcesingComplete => {
+                self.processing_state = ProcesingState::Completed;
+                self.path = None;
+                Command::none()
             }
-        };
-        Command::none()
+        }
     }
 
     fn view(&self) -> Element<Self::Message> {
-        column![
+        let message = match self.processing_state {
+            ProcesingState::Idle => match self.path.clone() {
+                Some(path) => format!("Selected: {:?}", truncate(path.to_str().unwrap(), 22)),
+                None => "Select a folder with images to resize".to_string(),
+            },
+            ProcesingState::Processing => format!("Progress: {} of {}", self.completed, self.total),
+            ProcesingState::Completed => "Resizing completed".to_string(),
+        };
+
+        let select_folder_button = if self.processing_state != ProcesingState::Processing {
+            button("Select Folder").on_press(Message::OpenFileDialog)
+        } else {
             button("Select Folder")
-                .on_press(Message::OpenFileDialog)
-                .width(Length::Fill),
-            button("Resize Images")
-                .on_press(Message::ResizeImages)
-                .width(Length::Fill),
-            text(format!("Progress: {} of {}", self.completed, self.total)),
+        };
+
+        let resize_button =
+            if self.path.is_some() && self.processing_state != ProcesingState::Processing {
+                button("Resize Images").on_press(Message::ResizeImages)
+            } else {
+                button("Resize Images")
+            };
+
+        column![
+            select_folder_button.width(Length::Fill),
+            resize_button.width(Length::Fill),
+            text(message).width(Length::Shrink),
             progress_bar(0.0..=self.total as f32, self.completed as f32).width(Length::Fill),
         ]
         .spacing(10)
@@ -161,6 +141,18 @@ impl Application for ImageResizer {
         .align_items(Alignment::Center)
         .into()
     }
+}
+
+fn truncate(s: &str, len: usize) -> String {
+    if s.len() > len {
+        format!("...{}", &s[(s.len() - len)..])
+    } else {
+        s.to_string()
+    }
+}
+
+async fn resize_image_async(path: PathBuf) {
+    resize_image(path);
 }
 
 fn main() -> iced::Result {
