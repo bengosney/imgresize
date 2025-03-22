@@ -3,8 +3,6 @@ use std::fs;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
-use std::sync::atomic::AtomicI32;
-use std::sync::Arc;
 use std::thread;
 
 use std::path::PathBuf;
@@ -16,17 +14,30 @@ use image::{ExtendedColorType, ImageEncoder};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, Resizer};
 
-use iced::widget::{button, column, progress_bar, text};
+use iced::widget::{button, column, progress_bar, text, scrollable};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 
 use native_dialog::FileDialog;
+
+#[derive(PartialEq)]
+enum ProcesingState {
+    Idle,
+    Processing,
+    Completed,
+}
+
+impl Default for ProcesingState {
+    fn default() -> Self {
+        ProcesingState::Idle
+    }
+}
 
 #[derive(Default)]
 struct ImageResizer {
     completed: i32,
     total: i32,
     path: Option<PathBuf>,
-    completed_tracker: Arc<AtomicI32>,
+    processing_state: ProcesingState,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -34,6 +45,7 @@ pub enum Message {
     OpenFileDialog,
     ResizeImages,
     ProgressIncrement,
+    ProcesingComplete,
 }
 
 fn resize_image(path: PathBuf) {
@@ -111,12 +123,12 @@ impl Application for ImageResizer {
         match message {
             Message::OpenFileDialog => {
                 self.path = FileDialog::new().show_open_single_dir().unwrap();
-
+                self.processing_state = ProcesingState::Idle;
+                self.total = 0;
+                self.completed = 0;
                 Command::none()
             }
             Message::ResizeImages => {
-                self.completed_tracker
-                    .store(0, std::sync::atomic::Ordering::SeqCst);
                 self.total = 0;
                 self.completed = 0;
                 let glob_path = format!("{}/*.jp*g", self.path.clone().unwrap().to_str().unwrap());
@@ -128,6 +140,7 @@ impl Application for ImageResizer {
                 self.total = files.len() as i32;
                 println!("Total files: {}", self.total);
                 println!("Resizing on thread {:?}", thread::current().id());
+                self.processing_state = ProcesingState::Processing;
 
                 let commands: Vec<_> = files.into_iter().map(|file| {
                     Command::perform(resize_image_async(file), |_| Message::ProgressIncrement)
@@ -139,20 +152,46 @@ impl Application for ImageResizer {
                 println!("Incrementing progress");
                 self.completed += 1;
 
+                if self.completed == self.total {
+                    Command::perform(async {}, |_| Message::ProcesingComplete)
+                } else {
+                    Command::none()
+                }
+            }
+            Message::ProcesingComplete => {
+                self.processing_state = ProcesingState::Completed;
+                self.path = None;
                 Command::none()
             }
         }
     }
 
     fn view(&self) -> Element<Self::Message> {
-        column![
+        let message = match self.processing_state {
+            ProcesingState::Idle => match self.path.clone() {
+                Some(path) => format!("Selected: {:?}", truncate(path.to_str().unwrap(), 22)),
+                None => "Select a folder with images to resize".to_string(),
+            },
+            ProcesingState::Processing => format!("Progress: {} of {}", self.completed, self.total),
+            ProcesingState::Completed => "Resizing completed".to_string(),
+        };
+
+        let select_folder_button = if self.processing_state != ProcesingState::Processing {
+            button("Select Folder").on_press(Message::OpenFileDialog)
+        } else {
             button("Select Folder")
-                .on_press(Message::OpenFileDialog)
-                .width(Length::Fill),
+        };
+
+        let resize_button = if self.path.is_some() && self.processing_state != ProcesingState::Processing {
+            button("Resize Images").on_press(Message::ResizeImages)
+        } else {
             button("Resize Images")
-                .on_press(Message::ResizeImages)
-                .width(Length::Fill),
-            text(format!("Progress: {} of {}", self.completed, self.total)),
+        };
+
+        column![
+            select_folder_button.width(Length::Fill),
+            resize_button.width(Length::Fill),
+            text(message).width(Length::Shrink),
             progress_bar(0.0..=self.total as f32, self.completed as f32).width(Length::Fill),
         ]
         .spacing(10)
@@ -160,6 +199,18 @@ impl Application for ImageResizer {
         .width(Length::Fill)
         .align_items(Alignment::Center)
         .into()
+    }
+}
+
+impl ImageResizer {
+
+}
+
+fn truncate(s: &str, len: usize) -> String {
+    if s.len() > len {
+        format!("...{}", &s[(s.len() - len)..])
+    } else {
+        s.to_string()
     }
 }
 
