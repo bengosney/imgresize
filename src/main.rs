@@ -13,7 +13,7 @@ use native_dialog::FileDialog;
 
 use imgsize::resize_image;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum ProcesingState {
     Idle,
     Processing,
@@ -213,4 +213,82 @@ fn main() -> iced::Result {
         },
         ..Settings::default()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_initial_state() {
+        let resizer = ImageResizer::default();
+        assert_eq!(resizer.completed, 0);
+        assert_eq!(resizer.total, 0);
+        assert_eq!(resizer.path, None);
+        assert_eq!(resizer.processing_state, ProcesingState::Idle);
+    }
+
+    #[test]
+    fn test_open_file_dialog() {
+        let mut resizer = ImageResizer::default();
+        let _ = resizer.update(Message::OpenFileDialog);
+
+        assert_eq!(resizer.processing_state, ProcesingState::Idle);
+        assert_eq!(resizer.completed, 0);
+        assert_eq!(resizer.total, 0);
+    }
+
+    #[test]
+    fn test_resize_images_no_path() {
+        let mut resizer = ImageResizer::default();
+        let _ = resizer.update(Message::ResizeImages);
+
+        assert_eq!(resizer.processing_state, ProcesingState::Idle);
+        assert_eq!(resizer.completed, 0);
+        assert_eq!(resizer.total, 0);
+    }
+
+    #[test]
+    fn test_progress_increment() {
+        let mut resizer = ImageResizer {
+            completed: 0,
+            total: 5,
+            path: Some(PathBuf::from("/some/path")),
+            processing_state: ProcesingState::Processing,
+        };
+
+        let _ = resizer.update(Message::ProgressIncrement);
+
+        assert_eq!(resizer.completed, 1);
+        assert_eq!(resizer.processing_state, ProcesingState::Processing);
+    }
+
+    #[test]
+    fn test_processing_complete() {
+        let mut resizer = ImageResizer {
+            completed: 5,
+            total: 5,
+            path: Some(PathBuf::from("/some/path")),
+            processing_state: ProcesingState::Processing,
+        };
+
+        let _ = resizer.update(Message::ProcesingComplete);
+
+        assert_eq!(resizer.processing_state, ProcesingState::Completed);
+        assert_eq!(resizer.path, None);
+    }
+
+    #[test]
+    fn test_truncate_short_string() {
+        let input = "short";
+        let result = truncate(input, 10);
+        assert_eq!(result, "short");
+    }
+
+    #[test]
+    fn test_truncate_long_string() {
+        let input = "this_is_a_very_long_string";
+        let result = truncate(input, 10);
+        assert_eq!(result, "...ong_string");
+    }
 }
