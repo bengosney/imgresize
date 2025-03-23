@@ -1816,6 +1816,7 @@ dependencies = [
  "glob",
  "iced",
  "image",
+ "log",
  "native-dialog",
 ]
 

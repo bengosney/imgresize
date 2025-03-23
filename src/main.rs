@@ -1,7 +1,7 @@
 use glob::glob;
-use std::thread;
-
 use std::path::PathBuf;
+
+use log::{debug, error, info};
 
 use iced::widget::{button, column, progress_bar, text};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
@@ -59,7 +59,22 @@ impl Application for ImageResizer {
     fn update(&mut self, message: Self::Message) -> Command<Message> {
         match message {
             Message::OpenFileDialog => {
-                self.path = FileDialog::new().show_open_single_dir().unwrap();
+                debug!("Opening file dialog");
+                self.path = match FileDialog::new().show_open_single_dir() {
+                    Ok(Some(path)) => {
+                        info!(path:? = path; "Selected folder");
+                        Some(path)
+                    }
+                    Ok(None) => {
+                        info!("No folder selected");
+                        None
+                    }
+                    Err(e) => {
+                        error!(error:? = e; "Error opening file dialog");
+                        None
+                    }
+                };
+
                 self.processing_state = ProcesingState::Idle;
                 self.total = 0;
                 self.completed = 0;
@@ -75,8 +90,7 @@ impl Application for ImageResizer {
                     .filter_map(Result::ok)
                     .collect();
                 self.total = files.len() as i32;
-                println!("Total files: {}", self.total);
-                println!("Resizing on thread {:?}", thread::current().id());
+                info!(total_images = self.total; "Total files to resize");
                 self.processing_state = ProcesingState::Processing;
 
                 let commands: Vec<_> = files
@@ -89,8 +103,8 @@ impl Application for ImageResizer {
                 Command::batch(commands)
             }
             Message::ProgressIncrement => {
-                println!("Incrementing progress");
                 self.completed += 1;
+                debug!(completed = self.completed; "Incrementing progress");
 
                 if self.completed == self.total {
                     Command::perform(async {}, |_| Message::ProcesingComplete)
@@ -99,6 +113,7 @@ impl Application for ImageResizer {
                 }
             }
             Message::ProcesingComplete => {
+                info!("Resizing completed");
                 self.processing_state = ProcesingState::Completed;
                 self.path = None;
                 Command::none()
