@@ -14,6 +14,22 @@ use image::{ExtendedColorType, ImageEncoder};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, Resizer};
 
+fn insert_sub_folder(path: PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let file_name: String = match path.file_name() {
+        Some(file_name) => file_name.to_string_lossy().to_string(),
+        None => {
+            error!(path:? = path; "Invalid path");
+            return Err("Invalid path".into());
+        }
+    };
+    let mut path = path;
+    path.pop();
+    path.push("smol");
+    fs::create_dir_all(&path)?;
+    path.set_file_name(file_name);
+    Ok(path)
+}
+
 pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>> {
     info!(
         path:? = path,
@@ -21,32 +37,13 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         "Resizing image"
     );
     // Read source image from file
-    let mut path = path;
     let src_image = ImageReader::open(path.to_str().ok_or_else(|| {
         error!(path:? = path ; "Invalid path");
         "Path conversion failed"
     })?)?
     .decode()?;
 
-    let filename: String = match path.file_name() {
-        Some(name) => name.to_string_lossy().to_string(),
-        None => {
-            error!(path:? = path; "Invalid path");
-            return Err("Invalid path".into());
-        }
-    };
-    path.pop();
-    path.push("smol");
-
-    fs::create_dir_all(match path.to_str() {
-        Some(path) => path,
-        None => {
-            error!(path:? = path; "Invalid path");
-            return Err("Invalid path".into());
-        }
-    })?;
-
-    path.push(filename.clone());
+    let path = insert_sub_folder(path)?;
 
     let src_width = src_image.width();
     let src_height = src_image.height();
@@ -86,9 +83,10 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         ExtendedColorType::Rgb8,
     )?;
 
-    let mut file = File::create(path)?;
+    let mut file = File::create(path.clone())?;
     file.write_all(&result_buf.into_inner()?)?;
-    info!(filename:? = filename; "Image saved");
 
-    return Ok(filename);
+    info!(path:? = path; "Image saved");
+
+    return Ok(path.to_string_lossy().to_string());
 }
