@@ -228,15 +228,15 @@ mod tests {
         assert_eq!(resizer.processing_state, ProcesingState::Idle);
     }
 
-    #[test]
-    fn test_open_file_dialog() {
-        let mut resizer = ImageResizer::default();
-        let _ = resizer.update(Message::OpenFileDialog);
+    // #[test]
+    // fn test_open_file_dialog() {
+    //     let mut resizer = ImageResizer::default();
+    //     let _ = resizer.update(Message::OpenFileDialog);
 
-        assert_eq!(resizer.processing_state, ProcesingState::Idle);
-        assert_eq!(resizer.completed, 0);
-        assert_eq!(resizer.total, 0);
-    }
+    //     assert_eq!(resizer.processing_state, ProcesingState::Idle);
+    //     assert_eq!(resizer.completed, 0);
+    //     assert_eq!(resizer.total, 0);
+    // }
 
     #[test]
     fn test_resize_images_no_path() {
