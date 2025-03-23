@@ -86,12 +86,21 @@ impl Application for ImageResizer {
             Message::ResizeImages => {
                 self.total = 0;
                 self.completed = 0;
-                let glob_path = format!("{}/*.jp*g", self.path.clone().unwrap().to_str().unwrap());
+                let glob_path = match &self.path {
+                    Some(path) => path.join("*.jp*g").to_string_lossy().to_string(),
+                    None => {
+                        error!("Trying to resize with no path selected");
+                        return Command::none();
+                    }
+                };
 
-                let files: Vec<_> = glob(&glob_path)
-                    .expect("Failed to read glob pattern")
-                    .filter_map(Result::ok)
-                    .collect();
+                let files: Vec<_> = match glob(&glob_path) {
+                    Ok(files) => files.filter_map(Result::ok).collect(),
+                    Err(e) => {
+                        error!(error:? = e; "Failed to read glob pattern");
+                        return Command::none();
+                    }
+                };
                 self.total = files.len() as i32;
                 info!(total_images = self.total; "Total files to resize");
                 self.processing_state = ProcesingState::Processing;
@@ -126,10 +135,14 @@ impl Application for ImageResizer {
 
     fn view(&self) -> Element<Self::Message> {
         let message = match self.processing_state {
-            ProcesingState::Idle => match self.path.clone() {
-                Some(path) => format!("Selected: {:?}", truncate(path.to_str().unwrap(), 22)),
-                None => "Select a folder with images to resize".to_string(),
-            },
+            ProcesingState::Idle => self
+                .path
+                .as_ref()
+                .and_then(|path| {
+                    path.to_str()
+                        .map(|path_str| format!("Selected folder: {}", truncate(path_str, 50)))
+                })
+                .unwrap_or_else(|| "Select a folder with images to resize".to_string()),
             ProcesingState::Processing => format!("Progress: {} of {}", self.completed, self.total),
             ProcesingState::Completed => "Resizing completed".to_string(),
         };
@@ -169,8 +182,14 @@ fn truncate(s: &str, len: usize) -> String {
     }
 }
 
-async fn resize_image_async(path: PathBuf) {
-    resize_image(path);
+async fn resize_image_async(path: PathBuf) -> String {
+    match resize_image(path) {
+        Ok(image_path) => image_path,
+        Err(e) => {
+            error!(error:? = e; "Error resizing image");
+            format!("Error resizing image: {}", e)
+        }
+    }
 }
 
 #[derive(StructOpt, Debug)]

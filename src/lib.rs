@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::thread;
 
-use log::{debug, error, info, warn};
+use log::{error, info};
 
 use image::codecs::jpeg::JpegEncoder;
 use image::ImageReader;
@@ -14,7 +14,7 @@ use image::{ExtendedColorType, ImageEncoder};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, Resizer};
 
-pub fn resize_image(path: PathBuf) {
+pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>> {
     info!(
         path:? = path,
         thread_id:? = thread::current().id();
@@ -22,16 +22,29 @@ pub fn resize_image(path: PathBuf) {
     );
     // Read source image from file
     let mut path = path;
-    let src_image = ImageReader::open(path.to_str().unwrap())
-        .unwrap()
-        .decode()
-        .unwrap();
+    let src_image = ImageReader::open(path.to_str().ok_or_else(|| {
+        error!(path:? = path ; "Invalid path");
+        "Path conversion failed"
+    })?)?
+    .decode()?;
 
-    let filename: String = path.file_name().unwrap().to_string_lossy().into_owned();
+    let filename: String = match path.file_name() {
+        Some(name) => name.to_string_lossy().to_string(),
+        None => {
+            error!(path:? = path; "Invalid path");
+            return Err("Invalid path".into());
+        }
+    };
     path.pop();
     path.push("smol");
 
-    fs::create_dir_all(path.to_str().unwrap()).unwrap();
+    fs::create_dir_all(match path.to_str() {
+        Some(path) => path,
+        None => {
+            error!(path:? = path; "Invalid path");
+            return Err("Invalid path".into());
+        }
+    })?;
 
     path.push(filename.clone());
 
@@ -49,25 +62,33 @@ pub fn resize_image(path: PathBuf) {
 
     info!(dst_width, dst_height; "Destination image size");
 
-    let mut dst_image = Image::new(dst_width, dst_height, src_image.pixel_type().unwrap());
+    let pixel_type = match src_image.pixel_type() {
+        Some(pixel_type) => pixel_type,
+        None => {
+            error!("Pixel type not found");
+            return Err("Pixel type not found".into());
+        }
+    };
+
+    let mut dst_image = Image::new(dst_width, dst_height, pixel_type);
 
     // Create Resizer instance and resize source image
     // into buffer of destination image
     let mut resizer = Resizer::new();
-    resizer.resize(&src_image, &mut dst_image, None).unwrap();
+    resizer.resize(&src_image, &mut dst_image, None)?;
 
     // Write destination image to file
     let mut result_buf = BufWriter::new(Vec::new());
-    JpegEncoder::new(&mut result_buf)
-        .write_image(
-            dst_image.buffer(),
-            dst_width,
-            dst_height,
-            ExtendedColorType::Rgb8,
-        )
-        .unwrap();
+    JpegEncoder::new(&mut result_buf).write_image(
+        dst_image.buffer(),
+        dst_width,
+        dst_height,
+        ExtendedColorType::Rgb8,
+    )?;
 
-    let mut file = File::create(path).unwrap();
-    file.write_all(&result_buf.into_inner().unwrap()).unwrap();
+    let mut file = File::create(path)?;
+    file.write_all(&result_buf.into_inner()?)?;
     info!(filename:? = filename; "Image saved");
+
+    return Ok(filename);
 }
