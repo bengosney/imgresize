@@ -95,20 +95,19 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
 mod tests {
     use super::*;
     use std::fs;
+    use std::path::PathBuf;
+    use testdir::testdir;
 
     #[test]
     fn test_insert_sub_folder_valid_path() {
-        let test_path = PathBuf::from("tests/images/test_image.jpg");
-        let expected_path = PathBuf::from("tests/images/smol/test_image.jpg");
+        let base_path = testdir!();
+        let test_path = base_path.join("test_image.jpg");
+        let expected_path = base_path.join("smol/test_image.jpg");
 
         let result = insert_sub_folder(test_path.clone());
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), expected_path);
-
-        if expected_path.parent().unwrap().exists() {
-            fs::remove_dir_all(expected_path.parent().unwrap()).unwrap();
-        }
     }
 
     #[test]
@@ -122,35 +121,34 @@ mod tests {
 
     #[test]
     fn test_insert_sub_folder_creates_directory() {
-        let test_path = PathBuf::from("tests/images/test_image.jpg");
-        let expected_dir = PathBuf::from("tests/images/smol");
+        let base_path = testdir!();
+        let test_path = base_path.join("test_image.jpg");
+        let expected_dir = base_path.join("smol");
 
         let result = insert_sub_folder(test_path.clone());
 
         assert!(result.is_ok());
         assert!(expected_dir.exists());
-
-        if expected_dir.exists() {
-            fs::remove_dir_all(expected_dir).unwrap();
-        }
     }
 
     #[test]
     fn test_resize_image_success() {
-        let test_image_path = PathBuf::from("tests/images/test_image.jpg");
-        let resized_image_path = PathBuf::from("tests/images/smol/test_image.jpg");
+        let base_path = testdir!();
+        let test_image_path = base_path.join("test_image.jpg");
+        let resized_image_path = base_path.join("smol/test_image.jpg");
 
-        if resized_image_path.exists() {
-            fs::remove_file(&resized_image_path).unwrap();
+        match fs::copy(
+            PathBuf::from("tests/images/test_image.jpg"),
+            test_image_path.clone(),
+        ) {
+            Ok(_) => {}
+            Err(e) => panic!("Failed to copy test image: {}", e),
         }
 
-        let result = resize_image(test_image_path.clone());
+        let result = resize_image(test_image_path);
 
         assert!(result.is_ok());
         assert!(resized_image_path.exists());
-
-        fs::remove_file(resized_image_path.clone()).unwrap();
-        fs::remove_dir(resized_image_path.parent().unwrap()).unwrap();
     }
 
     #[test]
