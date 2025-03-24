@@ -1,6 +1,6 @@
 [package]
 name = "imgsize"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.81.0"
 
@@ -14,6 +14,7 @@ log = { version = "0.4.26", features = ["kv"] }
 native-dialog = "0.7"
 structopt = "0.3.26"
 structured-logger = "1.0.3"
+testdir = "0.9.3"
 
 [profile.dev]
 opt-level = 0

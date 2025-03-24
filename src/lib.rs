@@ -14,6 +14,22 @@ use image::{ExtendedColorType, ImageEncoder};
 use fast_image_resize::images::Image;
 use fast_image_resize::{IntoImageView, Resizer};
 
+fn insert_sub_folder(path: PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let file_name: String = match path.file_name() {
+        Some(file_name) => file_name.to_string_lossy().to_string(),
+        None => {
+            error!(path:? = path; "Invalid path");
+            return Err("Invalid path".into());
+        }
+    };
+    let mut path = path;
+    path.pop();
+    path.push("smol");
+    fs::create_dir_all(&path)?;
+    path.push(file_name);
+    Ok(path)
+}
+
 pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>> {
     info!(
         path:? = path,
@@ -21,32 +37,13 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         "Resizing image"
     );
     // Read source image from file
-    let mut path = path;
     let src_image = ImageReader::open(path.to_str().ok_or_else(|| {
         error!(path:? = path ; "Invalid path");
         "Path conversion failed"
     })?)?
     .decode()?;
 
-    let filename: String = match path.file_name() {
-        Some(name) => name.to_string_lossy().to_string(),
-        None => {
-            error!(path:? = path; "Invalid path");
-            return Err("Invalid path".into());
-        }
-    };
-    path.pop();
-    path.push("smol");
-
-    fs::create_dir_all(match path.to_str() {
-        Some(path) => path,
-        None => {
-            error!(path:? = path; "Invalid path");
-            return Err("Invalid path".into());
-        }
-    })?;
-
-    path.push(filename.clone());
+    let path = insert_sub_folder(path)?;
 
     let src_width = src_image.width();
     let src_height = src_image.height();
@@ -86,9 +83,89 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         ExtendedColorType::Rgb8,
     )?;
 
-    let mut file = File::create(path)?;
+    let mut file = File::create(path.clone())?;
     file.write_all(&result_buf.into_inner()?)?;
-    info!(filename:? = filename; "Image saved");
 
-    return Ok(filename);
+    info!(path:? = path; "Image saved");
+
+    return Ok(path.to_string_lossy().to_string());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use testdir::testdir;
+
+    #[test]
+    fn test_insert_sub_folder_valid_path() {
+        let base_path = testdir!();
+        let test_path = base_path.join("test_image.jpg");
+        let expected_path = base_path.join("smol/test_image.jpg");
+
+        let result = insert_sub_folder(test_path.clone());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), expected_path);
+    }
+
+    #[test]
+    fn test_insert_sub_folder_invalid_path() {
+        let invalid_path = PathBuf::from("");
+
+        let result = insert_sub_folder(invalid_path);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_insert_sub_folder_creates_directory() {
+        let base_path = testdir!();
+        let test_path = base_path.join("test_image.jpg");
+        let expected_dir = base_path.join("smol");
+
+        let result = insert_sub_folder(test_path.clone());
+
+        assert!(result.is_ok());
+        assert!(expected_dir.exists());
+    }
+
+    #[test]
+    fn test_resize_image_success() {
+        let base_path = testdir!();
+        let test_image_path = base_path.join("test_image.jpg");
+        let resized_image_path = base_path.join("smol/test_image.jpg");
+
+        match fs::copy(
+            PathBuf::from("tests/images/test_image.jpg"),
+            test_image_path.clone(),
+        ) {
+            Ok(_) => {}
+            Err(e) => panic!("Failed to copy test image: {}", e),
+        }
+
+        let result = resize_image(test_image_path);
+
+        assert!(result.is_ok());
+        assert!(resized_image_path.exists());
+    }
+
+    #[test]
+    fn test_resize_image_invalid_path() {
+        let invalid_path = PathBuf::from("invalid/path/to/image.jpg");
+
+        let result = resize_image(invalid_path);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_resize_image_non_image_file() {
+        let non_image_path = PathBuf::from("tests/images/not_an_image.txt");
+
+        let result = resize_image(non_image_path);
+
+        assert!(result.is_err());
+    }
 }
