@@ -1,3 +1,17 @@
+## 0.6.0 (2025-03-24)
+
+### Feat
+
+- **tests**: add unit tests for ImageResizer functionality and improve state debugging
+- **resize**: refactor image resizing logic to include sub-folder creation
+- **logging**: integrate structured logging and command-line options for log level
+- **logging**: add logging functionality using the log crate
+
+### Refactor
+
+- **tests**: update tests to use testdir for dynamic path handling
+- **errors**: improve error handling and logging
+
 ## 0.5.0 (2025-03-22)
 
 ### Feat
