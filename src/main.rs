@@ -140,7 +140,7 @@ impl Application for ImageResizer {
                 .as_ref()
                 .and_then(|path| {
                     path.to_str()
-                        .map(|path_str| format!("Selected folder: {}", truncate(path_str, 50)))
+                        .map(|path_str| format!("Selected folder: {}", truncate(path_str, 25)))
                 })
                 .unwrap_or_else(|| "Select a folder with images to resize".to_string()),
             ProcesingState::Processing => format!("Progress: {} of {}", self.completed, self.total),
