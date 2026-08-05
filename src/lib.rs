@@ -15,6 +15,9 @@ use image::{ExtendedColorType, ImageEncoder};
 use fast_image_resize::images::Image;
 use fast_image_resize::{PixelType, Resizer};
 
+/// Longest edge, in pixels, that an output image may have.
+const MAX_SIZE: u32 = 2048;
+
 fn insert_sub_folder(path: PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let file_name: String = match path.file_name() {
         Some(file_name) => file_name.to_string_lossy().to_string(),
@@ -37,27 +40,32 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         thread_id:? = thread::current().id();
         "Resizing image"
     );
-    // Read source image from file, normalising to RGB8 up front: we always
-    // encode JPEG, which has no alpha channel, so this keeps greyscale/RGBA/
-    // 16-bit sources on a single code path.
-    let src_image = DynamicImage::ImageRgb8(
-        ImageReader::open(path.to_str().ok_or_else(|| {
-            error!(path:? = path ; "Invalid path");
-            "Path conversion failed"
-        })?)?
-        .decode()?
-        .to_rgb8(),
-    );
+    let path_str = path.to_str().ok_or_else(|| {
+        error!(path:? = path ; "Invalid path");
+        "Path conversion failed"
+    })?;
 
-    let path = insert_sub_folder(path)?;
+    // Read the dimensions from the header only; a source that needs no
+    // shrinking is copied verbatim, so there is no point decoding it.
+    let (src_width, src_height) = ImageReader::open(path_str)?.into_dimensions()?;
+    info!(src_width, src_height; "Source image size");
 
-    let src_width = src_image.width();
-    let src_height = src_image.height();
+    let dst_path = insert_sub_folder(path.clone())?;
 
     let max_size = std::cmp::max(src_width, src_height);
-    let modifier: f32 = 2048.0 / max_size as f32;
+    if max_size <= MAX_SIZE {
+        // Copying preserves the original quality; re-encoding would throw away
+        // a generation of detail for no reduction in size.
+        info!(path:? = dst_path; "Image already small enough, copying unchanged");
+        fs::copy(&path, &dst_path)?;
+        return Ok(dst_path.to_string_lossy().to_string());
+    }
 
-    info!(src_width, src_height; "Source image size");
+    // Normalise to RGB8: we always encode JPEG, which has no alpha channel, so
+    // this keeps greyscale/RGBA/16-bit sources on a single code path.
+    let src_image = DynamicImage::ImageRgb8(ImageReader::open(path_str)?.decode()?.to_rgb8());
+
+    let modifier: f32 = MAX_SIZE as f32 / max_size as f32;
 
     // Create container for data of destination image
     let dst_width = (src_width as f32 * modifier).floor() as u32;
@@ -83,12 +91,12 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         ExtendedColorType::Rgb8,
     )?;
 
-    let mut file = File::create(path.clone())?;
+    let mut file = File::create(&dst_path)?;
     file.write_all(&result_buf.into_inner()?)?;
 
-    info!(path:? = path; "Image saved");
+    info!(path:? = dst_path; "Image saved");
 
-    return Ok(path.to_string_lossy().to_string());
+    Ok(dst_path.to_string_lossy().to_string())
 }
 
 #[cfg(test)]
@@ -149,6 +157,38 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(resized_image_path.exists());
+
+        // The fixture is 3000x3200, so the long edge is scaled down to MAX_SIZE
+        // and the aspect ratio preserved.
+        let resized = image::ImageReader::open(&resized_image_path)
+            .expect("Failed to open resized image")
+            .decode()
+            .expect("Failed to decode resized image");
+        assert_eq!((resized.width(), resized.height()), (1920, 2048));
+    }
+
+    #[test]
+    fn test_resize_image_copies_already_small_image_unchanged() {
+        let base_path = testdir!();
+        let test_image_path = base_path.join("small.jpg");
+        let output_path = base_path.join("smol/small.jpg");
+
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(200, 100))
+            .save(&test_image_path)
+            .expect("Failed to write small test image");
+        let original_bytes = fs::read(&test_image_path).expect("Failed to read test image");
+
+        let result = resize_image(test_image_path);
+
+        assert!(result.is_ok(), "small jpeg failed: {:?}", result.err());
+        let output_bytes = fs::read(&output_path).expect("Failed to read output image");
+        assert!(
+            output_bytes == original_bytes,
+            "already-small image should be copied byte-for-byte \
+             (original {} bytes, output {} bytes)",
+            original_bytes.len(),
+            output_bytes.len()
+        );
     }
 
     #[test]
