@@ -10,7 +10,7 @@ use log::{error, info};
 use image::codecs::jpeg::JpegEncoder;
 use image::DynamicImage;
 use image::ImageReader;
-use image::{ExtendedColorType, ImageEncoder};
+use image::{ExtendedColorType, ImageDecoder, ImageEncoder};
 
 use fast_image_resize::images::Image;
 use fast_image_resize::{PixelType, Resizer};
@@ -61,15 +61,19 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         return Ok(dst_path.to_string_lossy().to_string());
     }
 
+    let mut decoder = ImageReader::open(path_str)?.into_decoder()?;
+    let orientation = decoder.orientation()?;
+    let mut src_image = DynamicImage::from_decoder(decoder)?;
+    src_image.apply_orientation(orientation);
+
     // Normalise to RGB8: we always encode JPEG, which has no alpha channel, so
     // this keeps greyscale/RGBA/16-bit sources on a single code path.
-    let src_image = DynamicImage::ImageRgb8(ImageReader::open(path_str)?.decode()?.to_rgb8());
+    let src_image = DynamicImage::ImageRgb8(src_image.to_rgb8());
 
     let modifier: f32 = MAX_SIZE as f32 / max_size as f32;
 
-    // Create container for data of destination image
-    let dst_width = (src_width as f32 * modifier).floor() as u32;
-    let dst_height = (src_height as f32 * modifier).floor() as u32;
+    let dst_width = (src_image.width() as f32 * modifier).floor() as u32;
+    let dst_height = (src_image.height() as f32 * modifier).floor() as u32;
 
     info!(dst_width, dst_height; "Destination image size");
 
@@ -165,6 +169,66 @@ mod tests {
             .decode()
             .expect("Failed to decode resized image");
         assert_eq!((resized.width(), resized.height()), (1920, 2048));
+    }
+
+    /// Splice a minimal EXIF APP1 segment carrying nothing but an Orientation
+    /// tag into a JPEG, straight after the SOI marker. Built by hand so the
+    /// fixture is reproducible and readable without an external tool.
+    fn with_exif_orientation(jpeg: &[u8], orientation: u8) -> Vec<u8> {
+        #[rustfmt::skip]
+        let mut app1: Vec<u8> = vec![
+            0xFF, 0xE1,             // APP1 marker
+            0x00, 0x22,             // segment length, including these 2 bytes
+            b'E', b'x', b'i', b'f', 0x00, 0x00,
+            0x49, 0x49, 0x2A, 0x00, // TIFF header, little-endian
+            0x08, 0x00, 0x00, 0x00, // byte offset of IFD0
+            0x01, 0x00,             // IFD0 has one entry
+            0x12, 0x01,             // tag 0x0112 = Orientation
+            0x03, 0x00,             // type 3 = SHORT
+            0x01, 0x00, 0x00, 0x00, // one value
+            0x00, 0x00, 0x00, 0x00, // the value itself, patched below
+            0x00, 0x00, 0x00, 0x00, // no IFD1
+        ];
+        app1[28] = orientation;
+
+        let mut out = Vec::with_capacity(jpeg.len() + app1.len());
+        out.extend_from_slice(&jpeg[..2]); // SOI
+        out.append(&mut app1);
+        out.extend_from_slice(&jpeg[2..]);
+        out
+    }
+
+    #[test]
+    fn test_resize_image_applies_exif_orientation() {
+        let base_path = testdir!();
+        let test_image_path = base_path.join("rotated.jpg");
+        let output_path = base_path.join("smol/rotated.jpg");
+
+        // Landscape pixel data that a viewer must rotate 90 degrees clockwise
+        // to show upright, i.e. a portrait photo straight off a phone.
+        let mut jpeg = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(3000, 2000))
+            .write_to(
+                &mut std::io::Cursor::new(&mut jpeg),
+                image::ImageFormat::Jpeg,
+            )
+            .expect("Failed to encode test image");
+        fs::write(&test_image_path, with_exif_orientation(&jpeg, 6))
+            .expect("Failed to write test image");
+
+        let result = resize_image(test_image_path);
+
+        assert!(result.is_ok(), "rotated jpeg failed: {:?}", result.err());
+        let output = image::ImageReader::open(&output_path)
+            .expect("Failed to open output image")
+            .decode()
+            .expect("Failed to decode output image");
+        assert!(
+            output.height() > output.width(),
+            "EXIF orientation was not applied: got {}x{}, expected portrait",
+            output.width(),
+            output.height()
+        );
     }
 
     #[test]
