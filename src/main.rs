@@ -174,12 +174,17 @@ impl Application for ImageResizer {
     }
 }
 
+
 fn truncate(s: &str, len: usize) -> String {
-    if s.len() > len {
-        format!("...{}", &s[(s.len() - len)..])
-    } else {
-        s.to_string()
+    let char_count = s.chars().count();
+    if char_count <= len {
+        return s.to_string();
     }
+
+    let keep = len.saturating_sub("...".len());
+    let tail: String = s.chars().skip(char_count - keep).collect();
+
+    format!("...{}", tail)
 }
 
 async fn resize_image_async(path: PathBuf) -> String {
@@ -289,6 +294,33 @@ mod tests {
     fn test_truncate_long_string() {
         let input = "this_is_a_very_long_string";
         let result = truncate(input, 10);
-        assert_eq!(result, "...ong_string");
+        assert_eq!(result, "..._string");
+    }
+
+    #[test]
+    fn test_truncate_never_exceeds_requested_length() {
+        let input = "/home/ben/Pictures/holiday-photos-2024/originals";
+
+        for len in 3..=input.chars().count() + 5 {
+            let result = truncate(input, len);
+            assert!(
+                result.chars().count() <= len,
+                "truncate(_, {}) returned {} chars: {:?}",
+                len,
+                result.chars().count(),
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn test_truncate_multibyte_path() {
+        // Byte 25-from-the-end falls inside the 2-byte 'ü', which panics
+        // when the string is sliced by byte offset.
+        let input = "/home/ben/ürlaub/sommer-2024-photos";
+
+        let result = truncate(input, 25);
+
+        assert_eq!(result, "...aub/sommer-2024-photos");
     }
 }
