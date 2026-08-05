@@ -8,11 +8,12 @@ use std::thread;
 use log::{error, info};
 
 use image::codecs::jpeg::JpegEncoder;
+use image::DynamicImage;
 use image::ImageReader;
 use image::{ExtendedColorType, ImageEncoder};
 
 use fast_image_resize::images::Image;
-use fast_image_resize::{IntoImageView, Resizer};
+use fast_image_resize::{PixelType, Resizer};
 
 fn insert_sub_folder(path: PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let file_name: String = match path.file_name() {
@@ -36,12 +37,17 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         thread_id:? = thread::current().id();
         "Resizing image"
     );
-    // Read source image from file
-    let src_image = ImageReader::open(path.to_str().ok_or_else(|| {
-        error!(path:? = path ; "Invalid path");
-        "Path conversion failed"
-    })?)?
-    .decode()?;
+    // Read source image from file, normalising to RGB8 up front: we always
+    // encode JPEG, which has no alpha channel, so this keeps greyscale/RGBA/
+    // 16-bit sources on a single code path.
+    let src_image = DynamicImage::ImageRgb8(
+        ImageReader::open(path.to_str().ok_or_else(|| {
+            error!(path:? = path ; "Invalid path");
+            "Path conversion failed"
+        })?)?
+        .decode()?
+        .to_rgb8(),
+    );
 
     let path = insert_sub_folder(path)?;
 
@@ -59,15 +65,9 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
 
     info!(dst_width, dst_height; "Destination image size");
 
-    let pixel_type = match src_image.pixel_type() {
-        Some(pixel_type) => pixel_type,
-        None => {
-            error!("Pixel type not found");
-            return Err("Pixel type not found".into());
-        }
-    };
-
-    let mut dst_image = Image::new(dst_width, dst_height, pixel_type);
+    // src_image is always ImageRgb8, so the destination buffer and the
+    // ExtendedColorType::Rgb8 we encode with below are guaranteed to agree.
+    let mut dst_image = Image::new(dst_width, dst_height, PixelType::U8x3);
 
     // Create Resizer instance and resize source image
     // into buffer of destination image
@@ -149,6 +149,20 @@ mod tests {
 
         assert!(result.is_ok());
         assert!(resized_image_path.exists());
+    }
+
+    #[test]
+    fn test_resize_image_greyscale_jpeg() {
+        let base_path = testdir!();
+        let test_image_path = base_path.join("greyscale.jpg");
+
+        image::DynamicImage::ImageLuma8(image::GrayImage::new(3000, 2000))
+            .save(&test_image_path)
+            .expect("Failed to write greyscale test image");
+
+        let result = resize_image(test_image_path);
+
+        assert!(result.is_ok(), "greyscale jpeg failed: {:?}", result.err());
     }
 
     #[test]
