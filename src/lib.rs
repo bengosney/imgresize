@@ -2,7 +2,7 @@ use std::fs;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::thread;
 
 use log::{error, info};
@@ -17,6 +17,40 @@ use fast_image_resize::{PixelType, Resizer};
 
 /// Longest edge, in pixels, that an output image may have.
 const MAX_SIZE: u32 = 2048;
+
+/// File extensions treated as JPEG, compared case-insensitively.
+const JPEG_EXTENSIONS: [&str; 2] = ["jpg", "jpeg"];
+
+/// List the JPEGs directly inside `dir`, ignoring any subdirectories.
+///
+/// Reads the directory rather than globbing it: a folder whose own name
+/// contains pattern characters (`Photos [2024]`) would otherwise match nothing.
+pub fn find_jpegs(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+    let mut jpegs: Vec<PathBuf> = Vec::new();
+
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+
+        let is_jpeg = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| {
+                JPEG_EXTENSIONS
+                    .iter()
+                    .any(|jpeg| ext.eq_ignore_ascii_case(jpeg))
+            });
+
+        if is_jpeg && path.is_file() {
+            jpegs.push(path);
+        }
+    }
+
+    // read_dir yields entries in arbitrary order; glob returned them sorted, so
+    // keep processing order stable and logs comparable between runs.
+    jpegs.sort();
+
+    Ok(jpegs)
+}
 
 fn insert_sub_folder(path: PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
     let file_name: String = match path.file_name() {
@@ -109,6 +143,56 @@ mod tests {
     use std::fs;
     use std::path::PathBuf;
     use testdir::testdir;
+
+    /// Sorted file names, so assertions do not depend on directory order.
+    fn file_names(mut paths: Vec<PathBuf>) -> Vec<String> {
+        paths.sort();
+        paths
+            .iter()
+            .map(|path| path.file_name().unwrap().to_string_lossy().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn test_find_jpegs_is_case_insensitive() {
+        let dir = testdir!();
+        for name in ["lower.jpg", "UPPER.JPG", "mixed.JpEg", "long.jpeg"] {
+            fs::write(dir.join(name), b"").expect("Failed to write test file");
+        }
+
+        let found = find_jpegs(&dir).expect("find_jpegs failed");
+
+        assert_eq!(
+            file_names(found),
+            vec!["UPPER.JPG", "long.jpeg", "lower.jpg", "mixed.JpEg"]
+        );
+    }
+
+    #[test]
+    fn test_find_jpegs_ignores_lookalikes() {
+        let dir = testdir!();
+        fs::write(dir.join("photo.jpg"), b"").expect("Failed to write test file");
+        fs::write(dir.join("notes.txt"), b"").expect("Failed to write test file");
+        // Matched by the *.jp*g pattern, but not actually a JPEG extension.
+        fs::write(dir.join("weird.jpxg"), b"").expect("Failed to write test file");
+        // A directory that happens to be named like an image.
+        fs::create_dir(dir.join("album.jpg")).expect("Failed to create test dir");
+
+        let found = find_jpegs(&dir).expect("find_jpegs failed");
+
+        assert_eq!(file_names(found), vec!["photo.jpg"]);
+    }
+
+    #[test]
+    fn test_find_jpegs_in_folder_named_with_glob_metacharacters() {
+        let dir = testdir!().join("Photos [2024]");
+        fs::create_dir_all(&dir).expect("Failed to create test dir");
+        fs::write(dir.join("photo.jpg"), b"").expect("Failed to write test file");
+
+        let found = find_jpegs(&dir).expect("find_jpegs failed");
+
+        assert_eq!(file_names(found), vec!["photo.jpg"]);
+    }
 
     #[test]
     fn test_insert_sub_folder_valid_path() {

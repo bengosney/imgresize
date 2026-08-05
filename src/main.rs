@@ -1,4 +1,3 @@
-use glob::glob;
 use std::io;
 use std::path::PathBuf;
 
@@ -11,7 +10,7 @@ use iced::{Alignment, Application, Command, Element, Length, Settings};
 
 use native_dialog::FileDialog;
 
-use imgsize::resize_image;
+use imgsize::{find_jpegs, resize_image};
 
 #[derive(PartialEq, Debug)]
 enum ProcesingState {
@@ -87,18 +86,18 @@ impl Application for ImageResizer {
             Message::ResizeImages => {
                 self.total = 0;
                 self.completed = 0;
-                let glob_path = match &self.path {
-                    Some(path) => path.join("*.jp*g").to_string_lossy().to_string(),
+                let path = match &self.path {
+                    Some(path) => path,
                     None => {
                         error!("Trying to resize with no path selected");
                         return Command::none();
                     }
                 };
 
-                let files: Vec<_> = match glob(&glob_path) {
-                    Ok(files) => files.filter_map(Result::ok).collect(),
+                let files = match find_jpegs(path) {
+                    Ok(files) => files,
                     Err(e) => {
-                        error!(error:? = e; "Failed to read glob pattern");
+                        error!(error:? = e; "Failed to list images");
                         return Command::none();
                     }
                 };
@@ -182,7 +181,6 @@ impl Application for ImageResizer {
         .into()
     }
 }
-
 
 fn truncate(s: &str, len: usize) -> String {
     let char_count = s.chars().count();
