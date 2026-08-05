@@ -18,6 +18,7 @@ enum ProcesingState {
     Idle,
     Processing,
     Completed,
+    NoImagesFound,
 }
 
 impl Default for ProcesingState {
@@ -101,6 +102,13 @@ impl Application for ImageResizer {
                         return Command::none();
                     }
                 };
+
+                if files.is_empty() {
+                    info!(path:? = self.path; "No images found in the selected folder");
+                    self.processing_state = ProcesingState::NoImagesFound;
+                    return Command::none();
+                }
+
                 self.total = files.len() as i32;
                 info!(total_images = self.total; "Total files to resize");
                 self.processing_state = ProcesingState::Processing;
@@ -145,6 +153,7 @@ impl Application for ImageResizer {
                 .unwrap_or_else(|| "Select a folder with images to resize".to_string()),
             ProcesingState::Processing => format!("Progress: {} of {}", self.completed, self.total),
             ProcesingState::Completed => "Resizing completed".to_string(),
+            ProcesingState::NoImagesFound => "No images found in that folder".to_string(),
         };
 
         let select_folder_button = if self.processing_state != ProcesingState::Processing {
@@ -223,6 +232,21 @@ fn main() -> iced::Result {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use testdir::testdir;
+
+    #[test]
+    fn test_resize_images_with_no_images_does_not_stay_processing() {
+        let mut resizer = ImageResizer {
+            path: Some(testdir!()),
+            ..ImageResizer::default()
+        };
+
+        let _ = resizer.update(Message::ResizeImages);
+
+        // Anything but Processing would avoid the deadlock; NoImagesFound is
+        // the one that also tells the user why nothing happened.
+        assert_eq!(resizer.processing_state, ProcesingState::NoImagesFound);
+    }
 
     #[test]
     fn test_initial_state() {
