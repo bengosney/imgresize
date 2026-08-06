@@ -53,8 +53,8 @@ pub fn find_jpegs(dir: &Path) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>
 }
 
 fn insert_sub_folder(path: PathBuf) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let file_name: String = match path.file_name() {
-        Some(file_name) => file_name.to_string_lossy().to_string(),
+    let file_name = match path.file_name() {
+        Some(file_name) => file_name.to_owned(),
         None => {
             error!(path:? = path; "Invalid path");
             return Err("Invalid path".into());
@@ -382,6 +382,52 @@ mod tests {
             "non-UTF-8 filename rejected: {:?}",
             result.err()
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_resize_image_preserves_non_utf8_filename() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let base_path = testdir!();
+        let name = OsString::from_vec(b"photo_\xFF\xFE.jpg".to_vec());
+        let test_image_path = base_path.join(&name);
+
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(3000, 2000))
+            .save_with_format(&test_image_path, image::ImageFormat::Jpeg)
+            .expect("Failed to write test image");
+
+        resize_image(test_image_path).expect("resize failed");
+
+        let written: Vec<OsString> = fs::read_dir(base_path.join("smol"))
+            .expect("Failed to read output dir")
+            .map(|entry| entry.expect("Failed to read entry").file_name())
+            .collect();
+        assert_eq!(written, vec![name], "output filename was rewritten");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_resize_image_does_not_collide_distinct_non_utf8_filenames() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let base_path = testdir!();
+        // Distinct sources differing only in a byte that is not valid UTF-8;
+        // a lossy conversion maps both onto the same replacement character.
+        for raw in [b"a\xFF.jpg".to_vec(), b"a\xFE.jpg".to_vec()] {
+            let path = base_path.join(OsString::from_vec(raw));
+            image::DynamicImage::ImageRgb8(image::RgbImage::new(3000, 2000))
+                .save_with_format(&path, image::ImageFormat::Jpeg)
+                .expect("Failed to write test image");
+            resize_image(path).expect("resize failed");
+        }
+
+        let written = fs::read_dir(base_path.join("smol"))
+            .expect("Failed to read output dir")
+            .count();
+        assert_eq!(written, 2, "one output overwrote the other");
     }
 
     #[test]
