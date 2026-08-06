@@ -42,6 +42,22 @@ pub enum Message {
 struct UiFlags {}
 
 impl ImageResizer {
+    fn status_message(&self) -> String {
+        match self.processing_state {
+            ProcessingState::Idle => match &self.path {
+                Some(path) => {
+                    format!("Selected folder: {}", truncate(&path.to_string_lossy(), 25))
+                }
+                None => "Select a folder with images to resize".to_string(),
+            },
+            ProcessingState::Processing => {
+                format!("Progress: {} of {}", self.completed, self.total)
+            }
+            ProcessingState::Completed => "Resizing completed".to_string(),
+            ProcessingState::NoImagesFound => "No images found in that folder".to_string(),
+        }
+    }
+
     fn select_folder(&mut self, path: Option<PathBuf>) {
         self.path = path;
         self.processing_state = ProcessingState::Idle;
@@ -144,21 +160,7 @@ impl Application for ImageResizer {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let message = match self.processing_state {
-            ProcessingState::Idle => self
-                .path
-                .as_ref()
-                .and_then(|path| {
-                    path.to_str()
-                        .map(|path_str| format!("Selected folder: {}", truncate(path_str, 25)))
-                })
-                .unwrap_or_else(|| "Select a folder with images to resize".to_string()),
-            ProcessingState::Processing => {
-                format!("Progress: {} of {}", self.completed, self.total)
-            }
-            ProcessingState::Completed => "Resizing completed".to_string(),
-            ProcessingState::NoImagesFound => "No images found in that folder".to_string(),
-        };
+        let message = self.status_message();
 
         let select_folder_button = if self.processing_state != ProcessingState::Processing {
             button("Select Folder").on_press(Message::OpenFileDialog)
@@ -301,6 +303,28 @@ mod tests {
         assert_eq!(resizer.total, 0);
         assert_eq!(resizer.path, None);
         assert_eq!(resizer.processing_state, ProcessingState::Idle);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_status_message_shows_a_folder_whose_name_is_not_utf8() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let resizer = ImageResizer {
+            path: Some(PathBuf::from(OsString::from_vec(
+                b"/home/ben/holida\xFFs".to_vec(),
+            ))),
+            ..ImageResizer::default()
+        };
+
+        let message = resizer.status_message();
+
+        assert!(
+            message.starts_with("Selected folder:"),
+            "a selected folder was reported as no selection: {:?}",
+            message
+        );
     }
 
     #[test]
