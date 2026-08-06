@@ -74,14 +74,10 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         thread_id:? = thread::current().id();
         "Resizing image"
     );
-    let path_str = path.to_str().ok_or_else(|| {
-        error!(path:? = path ; "Invalid path");
-        "Path conversion failed"
-    })?;
-
     // Read the dimensions from the header only; a source that needs no
     // shrinking is copied verbatim, so there is no point decoding it.
-    let (src_width, src_height) = ImageReader::open(path_str)?.into_dimensions()?;
+    // Opened via the path itself, not a &str: filenames need not be valid UTF-8.
+    let (src_width, src_height) = ImageReader::open(&path)?.into_dimensions()?;
     info!(src_width, src_height; "Source image size");
 
     let dst_path = insert_sub_folder(path.clone())?;
@@ -95,7 +91,7 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
         return Ok(dst_path.to_string_lossy().to_string());
     }
 
-    let mut decoder = ImageReader::open(path_str)?.into_decoder()?;
+    let mut decoder = ImageReader::open(&path)?.into_decoder()?;
     let orientation = decoder.orientation()?;
     let mut src_image = DynamicImage::from_decoder(decoder)?;
     src_image.apply_orientation(orientation);
@@ -338,6 +334,32 @@ mod tests {
              (original {} bytes, output {} bytes)",
             original_bytes.len(),
             output_bytes.len()
+        );
+    }
+
+    /// Unix filenames are arbitrary bytes, so a perfectly openable file need not
+    /// be valid UTF-8. Windows has an equivalent case with unpaired surrogates,
+    /// but constructing one needs a different platform API.
+    #[test]
+    #[cfg(unix)]
+    fn test_resize_image_accepts_non_utf8_filename() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let base_path = testdir!();
+        let name = OsString::from_vec(b"photo_\xFF\xFE.jpg".to_vec());
+        let test_image_path = base_path.join(name);
+
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(3000, 2000))
+            .save_with_format(&test_image_path, image::ImageFormat::Jpeg)
+            .expect("Failed to write test image");
+
+        let result = resize_image(test_image_path);
+
+        assert!(
+            result.is_ok(),
+            "non-UTF-8 filename rejected: {:?}",
+            result.err()
         );
     }
 
