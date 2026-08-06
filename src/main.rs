@@ -14,16 +14,16 @@ use native_dialog::FileDialog;
 use imgsize::{find_jpegs, resize_image};
 
 #[derive(PartialEq, Debug)]
-enum ProcesingState {
+enum ProcessingState {
     Idle,
     Processing,
     Completed,
     NoImagesFound,
 }
 
-impl Default for ProcesingState {
+impl Default for ProcessingState {
     fn default() -> Self {
-        ProcesingState::Idle
+        ProcessingState::Idle
     }
 }
 
@@ -32,7 +32,7 @@ struct ImageResizer {
     completed: i32,
     total: i32,
     path: Option<PathBuf>,
-    processing_state: ProcesingState,
+    processing_state: ProcessingState,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -40,7 +40,7 @@ pub enum Message {
     OpenFileDialog,
     ResizeImages,
     ProgressIncrement,
-    ProcesingComplete,
+    ProcessingComplete,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -79,7 +79,7 @@ impl Application for ImageResizer {
                     }
                 };
 
-                self.processing_state = ProcesingState::Idle;
+                self.processing_state = ProcessingState::Idle;
                 self.total = 0;
                 self.completed = 0;
                 Command::none()
@@ -105,13 +105,13 @@ impl Application for ImageResizer {
 
                 if files.is_empty() {
                     info!(path:? = self.path; "No images found in the selected folder");
-                    self.processing_state = ProcesingState::NoImagesFound;
+                    self.processing_state = ProcessingState::NoImagesFound;
                     return Command::none();
                 }
 
                 self.total = files.len() as i32;
                 info!(total_images = self.total; "Total files to resize");
-                self.processing_state = ProcesingState::Processing;
+                self.processing_state = ProcessingState::Processing;
 
                 let commands: Vec<_> = files
                     .into_iter()
@@ -127,14 +127,14 @@ impl Application for ImageResizer {
                 debug!(completed = self.completed; "Incrementing progress");
 
                 if self.completed == self.total {
-                    Command::perform(async {}, |_| Message::ProcesingComplete)
+                    Command::perform(async {}, |_| Message::ProcessingComplete)
                 } else {
                     Command::none()
                 }
             }
-            Message::ProcesingComplete => {
+            Message::ProcessingComplete => {
                 info!("Resizing completed");
-                self.processing_state = ProcesingState::Completed;
+                self.processing_state = ProcessingState::Completed;
                 self.path = None;
                 Command::none()
             }
@@ -143,7 +143,7 @@ impl Application for ImageResizer {
 
     fn view(&self) -> Element<Self::Message> {
         let message = match self.processing_state {
-            ProcesingState::Idle => self
+            ProcessingState::Idle => self
                 .path
                 .as_ref()
                 .and_then(|path| {
@@ -151,19 +151,21 @@ impl Application for ImageResizer {
                         .map(|path_str| format!("Selected folder: {}", truncate(path_str, 25)))
                 })
                 .unwrap_or_else(|| "Select a folder with images to resize".to_string()),
-            ProcesingState::Processing => format!("Progress: {} of {}", self.completed, self.total),
-            ProcesingState::Completed => "Resizing completed".to_string(),
-            ProcesingState::NoImagesFound => "No images found in that folder".to_string(),
+            ProcessingState::Processing => {
+                format!("Progress: {} of {}", self.completed, self.total)
+            }
+            ProcessingState::Completed => "Resizing completed".to_string(),
+            ProcessingState::NoImagesFound => "No images found in that folder".to_string(),
         };
 
-        let select_folder_button = if self.processing_state != ProcesingState::Processing {
+        let select_folder_button = if self.processing_state != ProcessingState::Processing {
             button("Select Folder").on_press(Message::OpenFileDialog)
         } else {
             button("Select Folder")
         };
 
         let resize_button =
-            if self.path.is_some() && self.processing_state != ProcesingState::Processing {
+            if self.path.is_some() && self.processing_state != ProcessingState::Processing {
                 button("Resize Images").on_press(Message::ResizeImages)
             } else {
                 button("Resize Images")
@@ -287,7 +289,7 @@ mod tests {
 
         // Anything but Processing would avoid the deadlock; NoImagesFound is
         // the one that also tells the user why nothing happened.
-        assert_eq!(resizer.processing_state, ProcesingState::NoImagesFound);
+        assert_eq!(resizer.processing_state, ProcessingState::NoImagesFound);
     }
 
     #[test]
@@ -296,7 +298,7 @@ mod tests {
         assert_eq!(resizer.completed, 0);
         assert_eq!(resizer.total, 0);
         assert_eq!(resizer.path, None);
-        assert_eq!(resizer.processing_state, ProcesingState::Idle);
+        assert_eq!(resizer.processing_state, ProcessingState::Idle);
     }
 
     // #[test]
@@ -304,7 +306,7 @@ mod tests {
     //     let mut resizer = ImageResizer::default();
     //     let _ = resizer.update(Message::OpenFileDialog);
 
-    //     assert_eq!(resizer.processing_state, ProcesingState::Idle);
+    //     assert_eq!(resizer.processing_state, ProcessingState::Idle);
     //     assert_eq!(resizer.completed, 0);
     //     assert_eq!(resizer.total, 0);
     // }
@@ -314,7 +316,7 @@ mod tests {
         let mut resizer = ImageResizer::default();
         let _ = resizer.update(Message::ResizeImages);
 
-        assert_eq!(resizer.processing_state, ProcesingState::Idle);
+        assert_eq!(resizer.processing_state, ProcessingState::Idle);
         assert_eq!(resizer.completed, 0);
         assert_eq!(resizer.total, 0);
     }
@@ -325,13 +327,13 @@ mod tests {
             completed: 0,
             total: 5,
             path: Some(PathBuf::from("/some/path")),
-            processing_state: ProcesingState::Processing,
+            processing_state: ProcessingState::Processing,
         };
 
         let _ = resizer.update(Message::ProgressIncrement);
 
         assert_eq!(resizer.completed, 1);
-        assert_eq!(resizer.processing_state, ProcesingState::Processing);
+        assert_eq!(resizer.processing_state, ProcessingState::Processing);
     }
 
     #[test]
@@ -340,12 +342,12 @@ mod tests {
             completed: 5,
             total: 5,
             path: Some(PathBuf::from("/some/path")),
-            processing_state: ProcesingState::Processing,
+            processing_state: ProcessingState::Processing,
         };
 
-        let _ = resizer.update(Message::ProcesingComplete);
+        let _ = resizer.update(Message::ProcessingComplete);
 
-        assert_eq!(resizer.processing_state, ProcesingState::Completed);
+        assert_eq!(resizer.processing_state, ProcessingState::Completed);
         assert_eq!(resizer.path, None);
     }
 
