@@ -13,18 +13,13 @@ use native_dialog::FileDialog;
 
 use imgsize::{find_jpegs, resize_image};
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Debug, Default)]
 enum ProcessingState {
+    #[default]
     Idle,
     Processing,
     Completed,
     NoImagesFound,
-}
-
-impl Default for ProcessingState {
-    fn default() -> Self {
-        ProcessingState::Idle
-    }
 }
 
 #[derive(Default)]
@@ -141,7 +136,7 @@ impl Application for ImageResizer {
         }
     }
 
-    fn view(&self) -> Element<Self::Message> {
+    fn view(&self) -> Element<'_, Self::Message> {
         let message = match self.processing_state {
             ProcessingState::Idle => self
                 .path
@@ -239,7 +234,7 @@ struct Opt {
 
 fn main() -> iced::Result {
     let opt = Opt::parse();
-    Builder::with_level(&opt.log_level.as_str())
+    Builder::with_level(opt.log_level.as_str())
         .with_target_writer("imgsize", new_writer(io::stdout()))
         .init();
 
