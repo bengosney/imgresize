@@ -101,8 +101,10 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
     src_image.apply_orientation(orientation);
 
     // Normalise to RGB8: we always encode JPEG, which has no alpha channel, so
-    // this keeps greyscale/RGBA/16-bit sources on a single code path.
-    let src_image = DynamicImage::ImageRgb8(src_image.to_rgb8());
+    // this keeps greyscale/RGBA/16-bit sources on a single code path. into_rgb8
+    // consumes the decoded image, so an already-RGB8 JPEG - the common case -
+    // is moved rather than copied, and the original is freed either way.
+    let src_image = DynamicImage::ImageRgb8(src_image.into_rgb8());
 
     let modifier: f32 = MAX_SIZE as f32 / max_size as f32;
 
