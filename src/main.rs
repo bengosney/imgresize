@@ -2,8 +2,8 @@ use std::io;
 use std::panic;
 use std::path::PathBuf;
 
+use clap::Parser;
 use log::{debug, error, info, LevelFilter};
-use structopt::StructOpt;
 use structured_logger::{json::new_writer, Builder};
 
 use iced::widget::{button, column, progress_bar, text};
@@ -228,15 +228,15 @@ async fn resize_image_async(path: PathBuf) -> String {
     }
 }
 
-#[derive(StructOpt, Debug)]
-#[structopt(name = "image-resizer", about = "Resize images in a folder")]
+#[derive(Parser, Debug)]
+#[command(name = "image-resizer", version, about = "Resize images in a folder")]
 struct Opt {
-    #[structopt(short, long, default_value = "warn")]
+    #[arg(short, long, default_value = "warn")]
     log_level: LevelFilter,
 }
 
 fn main() -> iced::Result {
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     Builder::with_level(&opt.log_level.as_str())
         .with_target_writer("imgsize", new_writer(io::stdout()))
         .init();

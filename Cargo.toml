@@ -10,7 +10,7 @@ iced = { version = "0.12", features = ["tokio"] }
 image = "0.25"
 log = { version = "0.4.26", features = ["kv"] }
 native-dialog = "0.7"
-structopt = "0.3.26"
+clap = { version = "4", features = ["derive"] }
 structured-logger = "1.0.3"
 
 [dev-dependencies]
