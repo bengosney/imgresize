@@ -104,8 +104,8 @@ pub fn resize_image(path: PathBuf) -> Result<String, Box<dyn std::error::Error>>
 
     let modifier: f32 = MAX_SIZE as f32 / max_size as f32;
 
-    let dst_width = (src_image.width() as f32 * modifier).floor() as u32;
-    let dst_height = (src_image.height() as f32 * modifier).floor() as u32;
+    let dst_width = ((src_image.width() as f32 * modifier).floor() as u32).max(1);
+    let dst_height = ((src_image.height() as f32 * modifier).floor() as u32).max(1);
 
     info!(dst_width, dst_height; "Destination image size");
 
@@ -311,6 +311,27 @@ mod tests {
             output.width(),
             output.height()
         );
+    }
+
+    #[test]
+    fn test_resize_image_never_writes_a_zero_sized_image() {
+        let base_path = testdir!();
+        let test_image_path = base_path.join("panorama.jpg");
+        let output_path = base_path.join("smol/panorama.jpg");
+
+        // An aspect ratio beyond MAX_SIZE:1 scales the short edge below one
+        // whole pixel: 1 * (2048 / 5000) floors to zero.
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(5000, 1))
+            .save_with_format(&test_image_path, image::ImageFormat::Jpeg)
+            .expect("Failed to write test image");
+
+        resize_image(test_image_path).expect("resize failed");
+
+        let output = image::ImageReader::open(&output_path)
+            .expect("Failed to open output image")
+            .decode()
+            .expect("output image should be decodable");
+        assert_eq!((output.width(), output.height()), (2048, 1));
     }
 
     #[test]
