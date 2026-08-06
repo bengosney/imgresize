@@ -1,4 +1,5 @@
 use std::io;
+use std::panic;
 use std::path::PathBuf;
 
 use log::{debug, error, info, LevelFilter};
@@ -194,12 +195,35 @@ fn truncate(s: &str, len: usize) -> String {
     format!("...{}", tail)
 }
 
+/// Run `op`, turning a panic into an `Err` rather than letting it escape.
+///
+/// A panic inside a resize would otherwise unwind out of the future without ever
+/// sending `ProgressIncrement`, leaving the UI stuck in `Processing` with both
+/// buttons disabled - or, with `panic = "abort"`, take the whole app down.
+fn catching_panics<T>(op: impl FnOnce() -> T) -> Result<T, String> {
+    // AssertUnwindSafe is justified here because each call resizes a single file
+    // and shares no state that a panic could leave half-updated.
+    panic::catch_unwind(panic::AssertUnwindSafe(op)).map_err(|payload| {
+        payload
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown panic".to_string())
+    })
+}
+
 async fn resize_image_async(path: PathBuf) -> String {
-    match resize_image(path) {
-        Ok(image_path) => image_path,
-        Err(e) => {
+    let source = path.display().to_string();
+
+    match catching_panics(|| resize_image(path)) {
+        Ok(Ok(image_path)) => image_path,
+        Ok(Err(e)) => {
             error!(error:? = e; "Error resizing image");
             format!("Error resizing image: {}", e)
+        }
+        Err(message) => {
+            error!(panic:? = message, path:? = source; "Panic while resizing image");
+            format!("Panic while resizing {}: {}", source, message)
         }
     }
 }
@@ -231,6 +255,26 @@ fn main() -> iced::Result {
 mod tests {
     use super::*;
     use testdir::testdir;
+
+    #[test]
+    fn test_catching_panics_returns_the_value_when_nothing_panics() {
+        let result = catching_panics(|| 21 * 2);
+
+        assert_eq!(result, Ok(42));
+    }
+
+    #[test]
+    fn test_catching_panics_reports_the_panic_message() {
+        // Silence the default hook so a deliberate panic does not print a
+        // backtrace into otherwise clean test output.
+        let previous_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+
+        let result = catching_panics(|| -> i32 { panic!("decoder exploded") });
+
+        panic::set_hook(previous_hook);
+        assert_eq!(result, Err("decoder exploded".to_string()));
+    }
 
     #[test]
     fn test_resize_images_with_no_images_does_not_stay_processing() {

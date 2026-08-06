@@ -22,4 +22,5 @@ opt-level = 0
 opt-level = 3
 strip = true
 lto = true
-panic = "abort"
+
+panic = "unwind"
