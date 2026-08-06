@@ -41,6 +41,15 @@ pub enum Message {
 #[derive(Debug, Clone, Default)]
 struct UiFlags {}
 
+impl ImageResizer {
+    fn select_folder(&mut self, path: Option<PathBuf>) {
+        self.path = path;
+        self.processing_state = ProcessingState::Idle;
+        self.total = 0;
+        self.completed = 0;
+    }
+}
+
 impl Application for ImageResizer {
     type Message = Message;
     type Executor = iced::executor::Default;
@@ -59,7 +68,7 @@ impl Application for ImageResizer {
         match message {
             Message::OpenFileDialog => {
                 debug!("Opening file dialog");
-                self.path = match FileDialog::new().show_open_single_dir() {
+                let selection = match FileDialog::new().show_open_single_dir() {
                     Ok(Some(path)) => {
                         info!(path:? = path; "Selected folder");
                         Some(path)
@@ -74,9 +83,7 @@ impl Application for ImageResizer {
                     }
                 };
 
-                self.processing_state = ProcessingState::Idle;
-                self.total = 0;
-                self.completed = 0;
+                self.select_folder(selection);
                 Command::none()
             }
             Message::ResizeImages => {
@@ -296,15 +303,37 @@ mod tests {
         assert_eq!(resizer.processing_state, ProcessingState::Idle);
     }
 
-    // #[test]
-    // fn test_open_file_dialog() {
-    //     let mut resizer = ImageResizer::default();
-    //     let _ = resizer.update(Message::OpenFileDialog);
+    #[test]
+    fn test_select_folder_discards_previous_progress() {
+        let mut resizer = ImageResizer {
+            completed: 5,
+            total: 5,
+            path: None,
+            processing_state: ProcessingState::Completed,
+        };
 
-    //     assert_eq!(resizer.processing_state, ProcessingState::Idle);
-    //     assert_eq!(resizer.completed, 0);
-    //     assert_eq!(resizer.total, 0);
-    // }
+        resizer.select_folder(Some(PathBuf::from("/some/path")));
+
+        assert_eq!(resizer.path, Some(PathBuf::from("/some/path")));
+        assert_eq!(resizer.processing_state, ProcessingState::Idle);
+        assert_eq!(resizer.completed, 0);
+        assert_eq!(resizer.total, 0);
+    }
+
+    #[test]
+    fn test_select_folder_with_no_selection_clears_the_path() {
+        let mut resizer = ImageResizer {
+            completed: 0,
+            total: 0,
+            path: Some(PathBuf::from("/some/path")),
+            processing_state: ProcessingState::Idle,
+        };
+
+        resizer.select_folder(None);
+
+        assert_eq!(resizer.path, None);
+        assert_eq!(resizer.processing_state, ProcessingState::Idle);
+    }
 
     #[test]
     fn test_resize_images_no_path() {
